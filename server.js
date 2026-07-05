@@ -7,40 +7,34 @@ import ffmpeg from 'fluent-ffmpeg';
 import rateLimit from 'express-rate-limit';
 
 const app = express();
-// Production standard: rely on the environment's port completely
 const PORT = process.env.PORT || 5000; 
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// --- FIXED: Trust Render's upstream load balancers and reverse proxies ---
+app.set('trust proxy', 1);
 
-// --- Production Security & Optimization ---
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
   optionsSuccessStatus: 200
 }));
 app.use(express.json());
 
-// Serve static assets from the production UI build
-app.use(express.static(path.join(__dirname, "../frontend/build")));
+// --- FIXED: Removed the local static file build paths since the frontend is hosted elsewhere! ---
 
-// Prevent API scraping and resource starvation
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // Limit each IP to 30 requests per window
+  windowMs: 15 * 60 * 1000, 
+  max: 30, 
   message: { error: "Too many extraction requests from this IP, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const sanitizeTitle = (title) => {
-  // Production-grade filename sanitizer stripping dangerous chars and non-ascii gaps
   return title
     .replace(/[\\/:*?"<>|]/g, "")
     .replace(/\s+/g, "_")
     .trim() || "audio";
 };
 
-// --- API Endpoints ---
 app.get("/status", (req, res) => {
   res.status(200).json({ status: "healthy", timestamp: new Date() });
 });
@@ -53,35 +47,34 @@ app.post("/extract", apiLimiter, async (req, res) => {
   }
 
   try {
-    // 1. Resolve video metadata cleanly without downloading anything yet
+    // 1. FIXED: Changed client profile extractor args to 'web_creator' or 'ios' or 'tv'
+    // This makes yt-dlp emulate common app devices, which bypasses the data center bot wall.
     const meta = await ytDlp(url, {
       dumpJson: true,
       noPlaylist: true,
-      extractorArgs: 'youtube:player_client=default,-android_sdkless'
+      extractorArgs: 'youtube:player_client=ios,web_creator' 
     });
 
-    const title = sanitizeTitle(meta.title);
+    const title = sanitizeTitle(meta.title || "audio");
     const filename = `${title}.mp3`;
 
-    // 2. Set headers safely for file streaming attachments
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
     res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
 
     console.log(`[Production Link] Piping stream for: ${title}`);
 
-    // 3. Spawn yt-dlp to stream the raw data directly to stdout
+    // 2. FIXED: Update the download client payload args here too!
     const ytdlpProcess = ytDlp.exec(url, {
-      output: '-', // Pipe directly to stdout
+      output: '-', 
       format: 'bestaudio',
       noPlaylist: true,
-      extractorArgs: 'youtube:player_client=default,-android_sdkless'
+      extractorArgs: 'youtube:player_client=ios,web_creator'
     });
 
-    // 4. Pipe stdout directly into FFmpeg to convert to mp3 on-the-fly and send to response
     ffmpeg(ytdlpProcess.stdout)
       .toFormat('mp3')
-      .audioBitrate(192) // Production balanced standard for bandwidth and quality
+      .audioBitrate(192) 
       .on('error', (err) => {
         console.error('FFmpeg conversion piping crashed:', err.message);
         if (!res.headersSent) {
@@ -93,21 +86,17 @@ app.post("/extract", apiLimiter, async (req, res) => {
       })
       .pipe(res, { end: true });
 
-    // Handle abrupt user cancellations mid-stream safely
     req.on('close', () => {
       ytdlpProcess.kill('SIGTERM');
     });
 
   } catch (error) {
     console.error("Metadata discovery failed:", error);
-    return res.status(500).json({ error: "Could not retrieve video information. Check the URL structure." });
+    return res.status(500).json({ error: "Could not retrieve video information. Device blocked by video provider." });
   }
 });
 
-// React routing catch-all fallback
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
-});
+// --- FIXED: Removed the old catch-all route completely ---
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Production server bound and listening on port ${PORT}`);
