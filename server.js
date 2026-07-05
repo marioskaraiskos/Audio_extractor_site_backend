@@ -54,7 +54,7 @@ app.post("/extract", apiLimiter, async (req, res) => {
     const meta = await ytDlp(url, {
       dumpJson: true,
       noPlaylist: true,
-      cookiefile: cookiesPath,
+      cookies: cookiesPath,
       extractorArgs: 'youtube:player_client=ios,web_creator' 
     });
 
@@ -72,7 +72,7 @@ app.post("/extract", apiLimiter, async (req, res) => {
       output: '-', 
       format: 'bestaudio',
       noPlaylist: true,
-      cookiefile: cookiesPath,
+      cookies: cookiesPath,
       extractorArgs: 'youtube:player_client=ios,web_creator'
     });
 
