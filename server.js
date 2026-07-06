@@ -51,6 +51,7 @@ app.post("/extract", apiLimiter, async (req, res) => {
 
   // Define shared robust configurations to bypass data-center blocks
   const ytDlpOptions = {
+    binaryPath: '/usr/local/bin/yt-dlp',
     cookies: cookiesPath,
     noPlaylist: true,
     format: "bestaudio/best",
